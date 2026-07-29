@@ -1,0 +1,99 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "RGBroadcast",
+        "description": "Simulate a television for occupancy while you are away. The screen light does the full brightness swing; spill lights are optional ambient bounce that stay dimmer and follow the screen.",
+        "data": {
+          "name": "Name",
+          "screen_light": "Screen light",
+          "spill_lights": "Spill lights (optional)"
+        },
+        "data_description": {
+          "screen_light": "The main light, driven with the full television effect.",
+          "spill_lights": "Extra lights lit as if by the screen: dimmer, and following the screen's colour with a lag."
+        }
+      }
+    },
+    "error": {
+      "light_not_found": "That light could not be found. Pick a light that currently exists.",
+      "light_onoff_only": "That light can only switch on and off, so there is nothing to vary. Pick a dimmable or colour light."
+    },
+    "abort": {
+      "already_configured": "Those lights are already set up as a RGBroadcast."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "RGBroadcast settings",
+        "description": "Style, intensity and ad breaks are controlled by their own entities, so you can change them live from a dashboard. These settings apply to how the lights are driven.",
+        "data": {
+          "brightness_ceiling": "Brightness ceiling",
+          "on_stop": "When stopped",
+          "force_steps": "Force stepped rendering",
+          "disable_cct": "Never use colour temperature",
+          "force_tier": "Force capability tier",
+          "tick_min": "Minimum update interval",
+          "tick_max": "Maximum update interval"
+        },
+        "data_description": {
+          "brightness_ceiling": "Scales every style's brightness down, for a dim room.",
+          "force_steps": "Turn on if your light claims to support transitions but visibly snaps instead. Common on Matter lights.",
+          "disable_cct": "Forces colour output instead of white-balance changes on capable lights.",
+          "force_tier": "Only needed if a light misreports what it can do. Leave on Auto otherwise.",
+          "tick_min": "Leave blank to pick automatically from the light's capability.",
+          "tick_max": "Leave blank to pick automatically from the light's capability."
+        }
+      }
+    }
+  },
+  "entity": {
+    "select": {
+      "style": {
+        "name": "Style",
+        "state": {
+          "film": "Film",
+          "news": "News",
+          "sport": "Sport",
+          "action": "Action",
+          "game": "Game",
+          "latenight": "Late night",
+          "schedule": "Schedule"
+        }
+      }
+    },
+    "number": {
+      "intensity": { "name": "Intensity" }
+    },
+    "switch": {
+      "ad_breaks": { "name": "Ad breaks" }
+    },
+    "binary_sensor": {
+      "ad_break": { "name": "Ad break" }
+    }
+  },
+  "selector": {
+    "on_stop": {
+      "options": {
+        "turn_off": "Fade out and turn off",
+        "restore_previous": "Restore the previous state"
+      }
+    },
+    "force_tier": {
+      "options": {
+        "auto": "Auto (recommended)",
+        "hybrid": "Hybrid (colour + white)",
+        "colour": "Colour",
+        "cct": "Colour temperature",
+        "brightness": "Brightness only"
+      }
+    }
+  },
+  "issues": {
+    "onoff_light": {
+      "title": "A RGBroadcast light can no longer be simulated",
+      "description": "The light {entity} now reports that it can only switch on and off, so the RGBroadcast simulation for {name} cannot vary it. Check the light, or reconfigure the RGBroadcast to use a dimmable or colour light."
+    }
+  }
+}

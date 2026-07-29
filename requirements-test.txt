@@ -1,0 +1,4 @@
+# Pinned loosely: pytest-homeassistant-custom-component pulls the matching
+# Home Assistant version, so the tests run against real HA internals.
+pytest-homeassistant-custom-component
+ruff
