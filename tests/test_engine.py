@@ -15,6 +15,7 @@ from homeassistant.components.light import (
     ATTR_MAX_COLOR_TEMP_KELVIN,
     ATTR_MIN_COLOR_TEMP_KELVIN,
     ATTR_SUPPORTED_COLOR_MODES,
+    LIGHT_TURN_ON_SCHEMA,
     ColorMode,
     LightEntityFeature,
 )
@@ -22,8 +23,13 @@ from homeassistant.const import ATTR_SUPPORTED_FEATURES
 from homeassistant.core import HomeAssistant
 import pytest
 from pytest_homeassistant_custom_component.common import async_mock_service
+import voluptuous as vol
 
-from custom_components.rgbroadcast.const import ROLE_SCREEN, ROLE_SPILL
+from custom_components.rgbroadcast.const import (
+    ON_STOP_RESTORE,
+    ROLE_SCREEN,
+    ROLE_SPILL,
+)
 from custom_components.rgbroadcast.engine import EngineConfig, RGBroadcastEngine
 
 
@@ -191,6 +197,80 @@ async def test_fade_light_ramps_via_transition(
     await engine._settle()
     assert len(off_calls) == 1
     assert off_calls[0].data["transition"] > 0
+
+
+async def test_restore_previous_sends_a_valid_single_colour_call(
+    hass: HomeAssistant, calls, off_calls
+) -> None:
+    """Restore must rebuild a valid turn_on, not a rejected multi-colour one.
+
+    A light reports hs_color, color_temp_kelvin and rgb_color all at once; a
+    turn_on carrying more than one is rejected by Home Assistant, which used to
+    make restore fail and strand the light in its last simulated state.
+    """
+    hass.states.async_set(
+        "light.tv",
+        "on",
+        {
+            ATTR_SUPPORTED_COLOR_MODES: [ColorMode.COLOR_TEMP, ColorMode.HS],
+            ATTR_SUPPORTED_FEATURES: LightEntityFeature.TRANSITION,
+            "color_mode": ColorMode.COLOR_TEMP,
+            "brightness": 105,
+            "hs_color": [26.7, 25.5],
+            "color_temp_kelvin": 4566,
+            "rgb_color": [255, 219, 190],
+            "min_color_temp_kelvin": 2702,
+            "max_color_temp_kelvin": 6535,
+        },
+    )
+    engine = RGBroadcastEngine(
+        hass,
+        ["light.tv"],
+        {},
+        EngineConfig(on_stop=ON_STOP_RESTORE),
+        rng=random.Random(1),
+    )
+    engine._lights = [engine._seed("light.tv")]
+    calls.clear()
+    await engine._settle()
+
+    restores = [c for c in calls if c.data["entity_id"] == "light.tv"]
+    assert len(restores) == 1, "restore should issue one turn_on"
+    data = {k: v for k, v in restores[0].data.items() if k != "entity_id"}
+    # The captured state must validate against the real light.turn_on schema
+    # (this is what rejects multiple colour axes).
+    vol.Schema(LIGHT_TURN_ON_SCHEMA)(data)
+    # It restored the active colour-temp axis, not the derived hs/rgb ones.
+    assert data["color_temp_kelvin"] == 4566
+    assert data["brightness"] == 105
+    assert "hs_color" not in data and "rgb_color" not in data
+
+
+async def test_restore_of_a_hue_mode_light_uses_hs(hass: HomeAssistant, calls) -> None:
+    """A light left in a colour mode restores via hs_color, one axis only."""
+    hass.states.async_set(
+        "light.tv",
+        "on",
+        {
+            ATTR_SUPPORTED_COLOR_MODES: [ColorMode.HS],
+            "color_mode": ColorMode.HS,
+            "brightness": 200,
+            "hs_color": [120.0, 80.0],
+        },
+    )
+    engine = RGBroadcastEngine(
+        hass,
+        ["light.tv"],
+        {},
+        EngineConfig(on_stop=ON_STOP_RESTORE),
+        rng=random.Random(1),
+    )
+    engine._lights = [engine._seed("light.tv")]
+    calls.clear()
+    await engine._settle()
+    data = {k: v for k, v in calls[-1].data.items() if k != "entity_id"}
+    assert data["hs_color"] == [120.0, 80.0]
+    assert "color_temp_kelvin" not in data
 
 
 async def test_ad_break_switches_to_ads_style(hass: HomeAssistant, calls) -> None:

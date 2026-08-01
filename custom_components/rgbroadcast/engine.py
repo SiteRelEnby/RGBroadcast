@@ -19,7 +19,7 @@ from dataclasses import dataclass, replace
 import logging
 import random
 
-from homeassistant.components.light import DOMAIN as LIGHT_DOMAIN
+from homeassistant.components.light import DOMAIN as LIGHT_DOMAIN, ColorMode
 from homeassistant.const import ATTR_ENTITY_ID, SERVICE_TURN_OFF, SERVICE_TURN_ON
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
@@ -302,9 +302,27 @@ class RGBroadcastEngine:
 
     @staticmethod
     def _capture(state) -> dict:
-        """Snapshot enough of a light's state to restore it later."""
-        keep = ("brightness", "hs_color", "color_temp_kelvin", "rgb_color")
-        attrs = {k: state.attributes[k] for k in keep if k in state.attributes}
+        """Snapshot brightness and the one active colour axis, to restore later.
+
+        A light populates every colour attribute at once: hs_color,
+        color_temp_kelvin and rgb_color are all present regardless of the mode
+        actually in use. But light.turn_on rejects more than one colour axis in
+        a single call, so capturing all of them makes the restore call fail and
+        leaves the light stuck in its last simulated state. Capture only the
+        axis matching the current colour mode, plus brightness, and drop nulls.
+        """
+        attrs: dict = {}
+        brightness = state.attributes.get("brightness")
+        if brightness is not None:
+            attrs["brightness"] = brightness
+        kelvin = state.attributes.get("color_temp_kelvin")
+        hs = state.attributes.get("hs_color")
+        if state.attributes.get("color_mode") == ColorMode.COLOR_TEMP and kelvin:
+            attrs["color_temp_kelvin"] = kelvin
+        elif hs is not None:
+            # Any hue-bearing mode: send hs_color and let the component convert,
+            # the same one-axis path the renderer uses.
+            attrs["hs_color"] = list(hs)
         return {"state": state.state, "attrs": attrs}
 
     # --- the loop -----------------------------------------------------------
@@ -419,9 +437,19 @@ class RGBroadcastEngine:
         """Bring the lights to rest gracefully rather than snapping to black.
 
         Lights settle concurrently: a stepped ramp-down takes a few seconds, and
-        there is no reason to make several lights queue behind each other.
+        there is no reason to make several lights queue behind each other. One
+        light failing to settle must not strand the others, so failures are
+        logged rather than allowed to abort the batch.
         """
-        await asyncio.gather(*(self._settle_one(light) for light in self._lights))
+        results = await asyncio.gather(
+            *(self._settle_one(light) for light in self._lights),
+            return_exceptions=True,
+        )
+        for light, result in zip(self._lights, results, strict=False):
+            if isinstance(result, Exception):
+                _LOGGER.error(
+                    "rgbroadcast: failed to settle %s: %s", light.entity_id, result
+                )
 
     async def _settle_one(self, light: _Light) -> None:
         if self.config.on_stop == ON_STOP_RESTORE and light.restore_state:
