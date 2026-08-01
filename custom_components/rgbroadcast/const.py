@@ -32,7 +32,7 @@ ROLE_SCREEN: Final = "screen"
 ROLE_SPILL: Final = "spill"
 ROLES: Final = (ROLE_SCREEN, ROLE_SPILL)
 
-# --- Capability tiers (design doc section 3.5) -------------------------------
+# --- Capability tiers --------------------------------------------------------
 
 TIER_HYBRID: Final = "hybrid"
 TIER_COLOUR: Final = "colour"
@@ -53,13 +53,22 @@ ON_STOP_OPTIONS: Final = (ON_STOP_TURN_OFF, ON_STOP_RESTORE)
 
 DEFAULT_STYLE: Final = "news"
 DEFAULT_INTENSITY: Final = 1.0
+DEFAULT_COLOUR: Final = 1.0
 DEFAULT_AD_BREAKS: Final = True
 DEFAULT_BRIGHTNESS_CEILING: Final = 100
 DEFAULT_ON_STOP: Final = ON_STOP_TURN_OFF
 
 MIN_INTENSITY: Final = 0.5
-MAX_INTENSITY: Final = 2.0
+MAX_INTENSITY: Final = 5.0
 INTENSITY_STEP: Final = 0.1
+
+# Colour is a saturation bias: 0 renders everything as white / colour
+# temperature (realistic through a curtain), 1.0 is the tuned baseline, and
+# higher pushes toward vivid. Per config entry, so different rooms and different
+# RGB hardware can each be set to taste.
+MIN_COLOUR: Final = 0.0
+MAX_COLOUR: Final = 3.0
+COLOUR_STEP: Final = 0.1
 
 # Stepped rendering needs a fast tick to look continuous. Fade-capable lights
 # interpolate between commands, so they can dwell far longer for the same
@@ -71,10 +80,10 @@ FADE_TICK_MAX: Final = 7.0
 
 # Transition is set to a fraction of the tick so each fade lands before the next
 # command is issued. Queued transitions on a device that honours them fight each
-# other (design doc section 6).
+# other.
 FADE_TICK_FRACTION: Final = 0.9
 
-# --- Ad breaks (design doc section 8) ----------------------------------------
+# --- Ad breaks ---------------------------------------------------------------
 
 AD_CONTENT_MIN_S: Final = 12 * 60
 AD_CONTENT_MAX_S: Final = 18 * 60
@@ -84,7 +93,7 @@ AD_STYLE: Final = "ads"
 # Streaming and gaming do not have ad breaks.
 AD_EXEMPT_STYLES: Final = ("game",)
 
-# --- Ramp-down (design doc section 9) ----------------------------------------
+# --- Ramp-down ---------------------------------------------------------------
 
 RAMP_DOWN_STEPS: Final = 8
 RAMP_DOWN_SECONDS: Final = 4.0

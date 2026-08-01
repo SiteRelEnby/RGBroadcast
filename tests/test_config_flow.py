@@ -125,16 +125,53 @@ async def entry(hass: HomeAssistant) -> MockConfigEntry:
 async def test_entry_sets_up_all_entities(
     hass: HomeAssistant, entry: MockConfigEntry
 ) -> None:
-    """Setup creates the switch, ad-break switch, select, number and sensor."""
+    """Setup creates the switch, ad-break switch, select, numbers and sensor."""
     assert entry.state is ConfigEntryState.LOADED
     for suffix in (
         "switch.living_room",
         "switch.living_room_ad_breaks",
         "select.living_room_style",
         "number.living_room_intensity",
+        "number.living_room_colour",
         "binary_sensor.living_room_ad_break",
     ):
         assert hass.states.get(suffix) is not None, f"missing {suffix}"
+
+
+async def test_colour_dial_updates_engine_live(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> None:
+    """The colour number mirrors onto the live engine config immediately."""
+    await hass.services.async_call(
+        "number",
+        "set_value",
+        {"entity_id": "number.living_room_colour", "value": 1.8},
+        blocking=True,
+    )
+    assert entry.runtime_data.engine.config.colour == 1.8
+
+
+async def test_reconfigure_changes_lights(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> None:
+    """Reconfigure can add a spill light in place, without recreating."""
+    _add_light(hass, "light.lamp", [ColorMode.HS])
+
+    result = await entry.start_reconfigure_flow(hass)
+    assert result["type"] == FlowResultType.FORM
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            CONF_NAME: "Living Room",
+            CONF_SCREEN_LIGHT: "light.tv",
+            CONF_SPILL_LIGHTS: ["light.lamp"],
+        },
+    )
+    await hass.async_block_till_done()
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data[CONF_LIGHTS] == ["light.tv", "light.lamp"]
+    assert entry.data[CONF_ROLES]["light.lamp"] == ROLE_SPILL
 
 
 async def test_switch_starts_and_stops_engine(

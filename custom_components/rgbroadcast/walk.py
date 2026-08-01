@@ -5,7 +5,7 @@ Everything is a function of the previous state, a style, and an injected
 ``random.Random``. That is what makes the realism model exhaustively testable
 (see ``tests/test_walk.py``), and it is worth protecting.
 
-The rules it encodes come from the design doc's realism model:
+The realism model it encodes:
 
 1. Random *walk*, not random jump: consecutive states are related.
 2. Brightness variance is the dominant cue. It is what reads as "a screen"
@@ -39,12 +39,15 @@ SAT_DRIFT: Final = 3.0
 
 # Below this saturation the drawn colour is effectively a white, so on a hybrid
 # fixture the dedicated warm/cold white LEDs render it better than white mixed
-# from RGB. See design doc section 3.6.
-CCT_SAT_THRESHOLD: Final = 12.0
+# from RGB. Kept fairly low so that a light with a slight tint still renders
+# that tint as colour rather than snapping to white.
+CCT_SAT_THRESHOLD: Final = 8.0
 
-# Weighted saturation draw: mostly near-white, occasionally vivid.
-SAT_WEIGHT_LOW: Final = 70
-SAT_WEIGHT_MED: Final = 92  # cumulative, so medium is 22%, high is the last 8%
+# Weighted saturation draw. Real television light is mostly near-white, but a
+# lamp watched from inside the room reads better with more colour than the
+# through-a-curtain view strictly needs, so the low band is not overwhelming.
+SAT_WEIGHT_LOW: Final = 55
+SAT_WEIGHT_MED: Final = 80  # cumulative: low 55%, medium 25%, high 20%
 
 #: Reference tick in seconds. Walk deltas are tuned against this dwell and
 #: scaled linearly for other tick rates, so a fade-capable light running a 6s
@@ -75,11 +78,19 @@ class WalkState:
     """One point in the walk. Percentages, degrees, kelvin."""
 
     brightness: int
+    #: The walk's intrinsic saturation, in the style's own range. Drifts and
+    #: re-rolls here; the role profile and the colour dial are applied on top to
+    #: produce ``render_saturation``. Kept separate so those factors do not
+    #: compound as the walk feeds back into itself each tick.
     hue: float
     saturation: float
     kelvin: int
-    #: Whether this state renders via colour temperature rather than hue. Only
-    #: ever changes on a cut (design doc section 3.6).
+    #: Saturation actually sent to the light, after the role profile and colour
+    #: dial. This is what the payload and the colour/CCT-mode choice use.
+    render_saturation: float = 0.0
+    #: Whether this state renders via colour temperature rather than hue. Colour
+    #: and colour temperature are mutually exclusive per call, and switching
+    #: mid-fade jumps, so this only flips on a hard cut.
     use_cct: bool = False
 
 
@@ -96,8 +107,14 @@ class RoleProfile:
     #: Fraction of the style's brightness span this light uses, measured up from
     #: the band floor. 1.0 is the full band; a spill light stays low.
     brightness_span: float = 1.0
-    #: Multiplier on drawn saturation. A spill desaturates.
+    #: Multiplier on rendered saturation.
     saturation_factor: float = 1.0
+    #: Minimum rendered saturation, so a light can be made to always carry
+    #: colour regardless of how desaturated the scene is.
+    saturation_floor: float = 0.0
+    #: Maximum rendered saturation. None means use the style's own high band; a
+    #: value lets a light be more vivid than the style (a deep colour accent).
+    saturation_ceiling: float | None = None
     #: How much a cut is softened toward an ordinary drift, in [0, 1]. 0 reacts
     #: to a cut at full magnitude; a spill reacts more gently.
     cut_softness: float = 0.0
@@ -106,16 +123,19 @@ class RoleProfile:
     hue_lag: float = 0.0
 
 
-#: The screen does the full television effect; spill lights are ambient bounce
-#: off a wall, dimmer and desaturated, trailing the screen's colour. See design
-#: doc section 11 (coordinated multi-light).
+#: The screen does the full television effect: brightness-led, colour when the
+#: content has it. Spill lights are colour accents (bias lighting): they take
+#: the screen's hue and render it deeper and more saturated, staying dimmer, so
+#: a pair of accent lights inject colour notes alongside the main screen rather
+#: than washing out to white.
 ROLE_PROFILES: Final[dict[str, RoleProfile]] = {
     ROLE_SCREEN: RoleProfile(),
     ROLE_SPILL: RoleProfile(
-        brightness_span=0.35,
-        saturation_factor=0.6,
-        cut_softness=0.5,
-        hue_lag=0.35,
+        brightness_span=0.55,
+        saturation_floor=45.0,
+        saturation_ceiling=95.0,
+        cut_softness=0.4,
+        hue_lag=0.6,
     ),
 }
 
@@ -208,8 +228,8 @@ def _clamp_hue(hue: float, style: Style) -> float:
 def _draw_saturation(style: Style, rng: random.Random) -> float:
     """Draw a fresh saturation from the style's weighted distribution.
 
-    Roughly 70% near-white, 22% medium, 8% vivid. A uniform draw looks like a
-    disco; television is mostly pale light with occasional colour.
+    Weighted low/medium/high per SAT_WEIGHT_* (roughly 55/25/20). A uniform draw
+    looks like a disco; television is mostly pale light with occasional colour.
     """
     low, med, high = style.sat
     roll = rng.random() * 100
@@ -220,11 +240,21 @@ def _draw_saturation(style: Style, rng: random.Random) -> float:
     return float(rng.uniform(med, high))
 
 
-def initial_state(style: Style, limits: Limits, rng: random.Random) -> WalkState:
+def initial_state(
+    style: Style,
+    limits: Limits,
+    rng: random.Random,
+    *,
+    profile: RoleProfile | None = None,
+    colour: float = 1.0,
+) -> WalkState:
     """Seed a walk with a plausible starting point inside the style."""
+    profile = profile or RoleProfile()
     low, high = brightness_band(style, limits)
+    high = max(low + 1, round(low + (high - low) * profile.brightness_span))
     k_low, k_high = kelvin_band(style, limits)
-    saturation = _draw_saturation(style, rng)
+    intrinsic = _draw_saturation(style, rng)
+    rendered = render_saturation(intrinsic, style, profile, colour)
     hue = (
         rng.uniform(0, 360)
         if style.hue_is_full_circle
@@ -233,9 +263,10 @@ def initial_state(style: Style, limits: Limits, rng: random.Random) -> WalkState
     return WalkState(
         brightness=rng.randint(low, high),
         hue=hue,
-        saturation=saturation,
+        saturation=intrinsic,
+        render_saturation=rendered,
         kelvin=rng.randint(k_low, k_high),
-        use_cct=_resolve_use_cct(saturation, limits),
+        use_cct=_resolve_use_cct(rendered, limits),
     )
 
 
@@ -252,12 +283,36 @@ def _resolve_use_cct(saturation: float, limits: Limits) -> bool:
     return saturation < CCT_SAT_THRESHOLD
 
 
+def render_saturation(
+    intrinsic: float, style: Style, profile: RoleProfile, colour: float
+) -> float:
+    """Apply the role profile and the colour dial to a walk saturation.
+
+    Kept separate from the walk so it can be recomputed fresh each tick without
+    the profile factor compounding as the walk feeds its own output back in, and
+    so the colour dial takes effect immediately rather than only on the next
+    cut. ``colour`` is the user's saturation bias: 0 forces white, 1 is the
+    baseline, higher is more vivid.
+    """
+    ceiling = (
+        profile.saturation_ceiling
+        if profile.saturation_ceiling is not None
+        else float(style.sat[2])
+    )
+    biased = intrinsic * profile.saturation_factor * max(0.0, colour)
+    # The floor scales with the colour dial too, so turning colour down all the
+    # way still reaches white on an accent light.
+    floor = profile.saturation_floor * min(1.0, max(0.0, colour))
+    return min(ceiling, max(floor, biased))
+
+
 def step(
     state: WalkState,
     style: Style,
     *,
     is_cut: bool,
     intensity: float = 1.0,
+    colour: float = 1.0,
     limits: Limits | None = None,
     rng: random.Random,
     profile: RoleProfile | None = None,
@@ -269,13 +324,13 @@ def step(
     ``tick`` is the dwell length in seconds; deltas are scaled by
     ``tick / REFERENCE_TICK`` so a slow, fade-capable light covers the same
     ground per second as a fast, stepped one. ``profile`` is the light's role
-    policy (default: the screen, i.e. identity). ``reference_hue`` is the light
-    the profile trails, if any.
+    policy (default: the screen, i.e. identity). ``colour`` is the saturation
+    bias dial. ``reference_hue`` is the light the profile trails, if any.
     """
     limits = limits or Limits()
     profile = profile or RoleProfile()
 
-    # A cut is softened toward an ordinary drift by the profile, so an ambient
+    # A cut is softened toward an ordinary drift by the profile, so an accent
     # light reacts to the same cut without the room strobing in unison.
     cut_magnitude = style.jump + (style.drift - style.jump) * profile.cut_softness
     magnitude = cut_magnitude if is_cut else style.drift
@@ -289,14 +344,15 @@ def step(
     brightness = min(high, max(low, state.brightness + rng.randint(-delta, delta)))
 
     # --- saturation ---------------------------------------------------------
-    # Re-rolled only on a cut; between cuts it drifts, so it does not fight the
-    # hue walk.
+    # The intrinsic saturation lives in the style's own range: re-rolled on a
+    # cut, drifting otherwise so it does not fight the hue walk. The profile and
+    # colour dial are layered on top to get the value actually rendered.
     if is_cut:
-        saturation = _draw_saturation(style, rng)
+        intrinsic = _draw_saturation(style, rng)
     else:
-        saturation = state.saturation + rng.uniform(-SAT_DRIFT, SAT_DRIFT)
-    saturation *= profile.saturation_factor
-    saturation = min(float(style.sat[2]), max(0.0, saturation))
+        intrinsic = state.saturation + rng.uniform(-SAT_DRIFT, SAT_DRIFT)
+    intrinsic = min(float(style.sat[2]), max(0.0, intrinsic))
+    rendered = render_saturation(intrinsic, style, profile, colour)
 
     # --- hue ----------------------------------------------------------------
     hue_delta = (HUE_CUT_DEG if is_cut else HUE_DRIFT_DEG) * scale
@@ -312,11 +368,10 @@ def step(
     kelvin = min(k_high, max(k_low, state.kelvin + rng.randint(-k_delta, k_delta)))
 
     # --- render mode --------------------------------------------------------
-    # Switching between hue and colour temperature mid-fade produces a visible
-    # jump, and transition may not apply across the change. So the mode is
-    # locked between cuts and may only flip on a hard cut. The capability guards
-    # still apply every tick, so a live disable_cct toggle is honoured at once.
-    use_cct = _resolve_use_cct(saturation, limits) if is_cut else state.use_cct
+    # The colour/CCT choice follows the rendered saturation, and is locked
+    # between cuts (a mid-fade mode switch jumps). The capability guards apply
+    # every tick, so a live disable_cct toggle is honoured at once.
+    use_cct = _resolve_use_cct(rendered, limits) if is_cut else state.use_cct
     if not limits.has_cct or limits.disable_cct:
         use_cct = False
     elif not limits.has_colour:
@@ -326,7 +381,8 @@ def step(
         state,
         brightness=brightness,
         hue=hue,
-        saturation=saturation,
+        saturation=intrinsic,
+        render_saturation=rendered,
         kelvin=kelvin,
         use_cct=use_cct,
     )

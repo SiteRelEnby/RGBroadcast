@@ -44,17 +44,33 @@ _LIGHTS_SELECTOR = selector.EntitySelector(
 )
 
 
-_USER_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_NAME, default="Living Room"): str,
-        vol.Required(CONF_SCREEN_LIGHT): _LIGHT_SELECTOR,
-        vol.Optional(CONF_SPILL_LIGHTS): _LIGHTS_SELECTOR,
-    }
-)
+def _lights_schema(
+    name: str = "Living Room",
+    screen: str | None = None,
+    spills: list[str] | None = None,
+) -> vol.Schema:
+    """The light-selection form, optionally pre-filled for reconfiguration."""
+    screen_field = (
+        vol.Required(CONF_SCREEN_LIGHT, default=screen)
+        if screen
+        else vol.Required(CONF_SCREEN_LIGHT)
+    )
+    spill_field = (
+        vol.Optional(CONF_SPILL_LIGHTS, default=spills)
+        if spills
+        else vol.Optional(CONF_SPILL_LIGHTS)
+    )
+    return vol.Schema(
+        {
+            vol.Required(CONF_NAME, default=name): str,
+            screen_field: _LIGHT_SELECTOR,
+            spill_field: _LIGHTS_SELECTOR,
+        }
+    )
 
 
 class RGBroadcastConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Handle the initial setup."""
+    """Handle setup and reconfiguration."""
 
     VERSION = 1
 
@@ -64,15 +80,8 @@ class RGBroadcastConfigFlow(ConfigFlow, domain=DOMAIN):
         """Collect the name and the lights to drive."""
         errors: dict[str, str] = {}
         if user_input is not None:
-            screen = user_input[CONF_SCREEN_LIGHT]
-            spills = [e for e in user_input.get(CONF_SPILL_LIGHTS, []) if e != screen]
-
-            error = self._validate_light(screen)
-            if error:
-                errors[CONF_SCREEN_LIGHT] = error
-            else:
-                lights = [screen, *spills]
-                roles = {screen: ROLE_SCREEN, **dict.fromkeys(spills, ROLE_SPILL)}
+            lights, roles, errors = self._resolve_lights(user_input)
+            if not errors:
                 await self.async_set_unique_id(
                     "_".join(sorted(lights)), raise_on_progress=False
                 )
@@ -83,14 +92,55 @@ class RGBroadcastConfigFlow(ConfigFlow, domain=DOMAIN):
                 )
 
         return self.async_show_form(
-            step_id="user", data_schema=_USER_SCHEMA, errors=errors
+            step_id="user", data_schema=_lights_schema(), errors=errors
         )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Change the name and lights of an existing entry, in place.
+
+        Reloads the entry so the engine re-seeds with the new light set (adding
+        or removing spill accents, for example) without needing to delete and
+        recreate it.
+        """
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            lights, roles, errors = self._resolve_lights(user_input)
+            if not errors:
+                return self.async_update_reload_and_abort(
+                    entry,
+                    title=user_input[CONF_NAME],
+                    data={CONF_LIGHTS: lights, CONF_ROLES: roles},
+                )
+
+        current_roles: dict[str, str] = entry.data.get(CONF_ROLES, {})
+        screen = next((e for e, r in current_roles.items() if r == ROLE_SCREEN), None)
+        spills = [e for e, r in current_roles.items() if r == ROLE_SPILL]
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=_lights_schema(entry.title, screen, spills),
+            errors=errors,
+        )
+
+    def _resolve_lights(
+        self, user_input: dict[str, Any]
+    ) -> tuple[list[str], dict[str, str], dict[str, str]]:
+        """Turn a submitted form into (lights, roles, errors)."""
+        screen = user_input[CONF_SCREEN_LIGHT]
+        spills = [e for e in user_input.get(CONF_SPILL_LIGHTS, []) if e != screen]
+        if error := self._validate_light(screen):
+            return [], {}, {CONF_SCREEN_LIGHT: error}
+        lights = [screen, *spills]
+        roles = {screen: ROLE_SCREEN, **dict.fromkeys(spills, ROLE_SPILL)}
+        return lights, roles, {}
 
     def _validate_light(self, entity_id: str) -> str | None:
         """Reject a light that cannot be simulated, with a clear reason.
 
         A user pointing this at a smart plug and seeing nothing happen has no
-        feedback path otherwise (design doc open question 7).
+        feedback path otherwise.
         """
         state = self.hass.states.get(entity_id)
         if state is None:

@@ -1,7 +1,7 @@
 """Turning a walk state into a ``light.turn_on`` call.
 
 This is the layer that meets real hardware, so it carries the hard-won facts
-about Home Assistant's light platform (design doc section 3). The important ones:
+about Home Assistant's light platform. The important ones:
 
 * ``light.turn_on`` has a universal schema. ``hs_color`` and
   ``color_temp_kelvin`` are accepted for every colour-capable light and Home
@@ -79,7 +79,7 @@ def _colour_modes(state: State) -> set[str]:
 
 
 def _detect_tier(modes: set[str]) -> str:
-    """Classify a light by what it can vary (design doc section 3.5).
+    """Classify a light by what colour axes it can vary.
 
     Built on Home Assistant's own colour-mode predicates so the taxonomy stays
     in step with the platform. The hybrid/colour/cct/brightness/onoff tiering on
@@ -166,7 +166,7 @@ def build_payload(
     elif caps.has_colour:
         payload[ATTR_HS_COLOR] = [
             round(state.hue % 360, 2),
-            round(min(100.0, max(0.0, state.saturation)), 2),
+            round(min(100.0, max(0.0, state.render_saturation)), 2),
         ]
 
     if transition is not None and caps.can_fade:

@@ -158,7 +158,7 @@ def test_full_circle_hue_is_unconstrained() -> None:
 
 
 def test_saturation_distribution_is_weighted() -> None:
-    """Mostly near-white, occasionally vivid. Roughly 70/22/8."""
+    """Weighted toward low, but with real colour: roughly 55/25/20."""
     style = get_style("film")
     rng = random.Random(7)
     low = med = high = 0
@@ -171,9 +171,9 @@ def test_saturation_distribution_is_weighted() -> None:
             med += 1
         else:
             high += 1
-    assert low / draws == pytest.approx(0.70, abs=0.02)
-    assert med / draws == pytest.approx(0.22, abs=0.02)
-    assert high / draws == pytest.approx(0.08, abs=0.02)
+    assert low / draws == pytest.approx(0.55, abs=0.02)
+    assert med / draws == pytest.approx(0.25, abs=0.02)
+    assert high / draws == pytest.approx(0.20, abs=0.02)
 
 
 def test_saturation_only_rerolls_on_a_cut() -> None:
@@ -340,6 +340,83 @@ def test_spill_trails_the_screen_hue() -> None:
             reference_hue=screen.hue,
         )
     assert abs(_hue_delta(screen.hue, spill.hue)) < 40, "spill should converge"
+
+
+def _mean_render_sat(style, limits, *, colour, role=ROLE_SCREEN, seed=1):
+    rng = random.Random(seed)
+    profile = profile_for(role)
+    state = initial_state(style, limits, rng, profile=profile, colour=colour)
+    vals = []
+    for i in range(600):
+        state = step(
+            state,
+            style,
+            is_cut=(i % 5 == 0),
+            colour=colour,
+            limits=limits,
+            rng=rng,
+            profile=profile,
+        )
+        vals.append(state.render_saturation)
+    return sum(vals) / len(vals)
+
+
+def test_colour_dial_zero_renders_white() -> None:
+    """Colour 0 pins rendered saturation to zero, so everything is white/CCT."""
+    style = get_style("game")  # the most saturated style
+    limits = Limits()
+    rng = random.Random(3)
+    state = initial_state(style, limits, rng, colour=0.0)
+    for i in range(300):
+        state = step(
+            state, style, is_cut=(i % 4 == 0), colour=0.0, limits=limits, rng=rng
+        )
+        assert state.render_saturation == 0.0
+
+
+def test_colour_dial_scales_saturation_up() -> None:
+    """Turning colour up makes the rendered light more saturated."""
+    style = get_style("film")
+    limits = Limits()
+    assert (
+        _mean_render_sat(style, limits, colour=2.0)
+        > _mean_render_sat(style, limits, colour=1.0)
+        > _mean_render_sat(style, limits, colour=0.5)
+    )
+
+
+def test_spill_injects_colour_even_on_a_pale_style() -> None:
+    """A spill accent stays colourful even when the style is near-white."""
+    style = get_style("news")  # lowest-saturation style
+    limits = Limits()
+    profile = profile_for(ROLE_SPILL)
+    rng = random.Random(4)
+    state = initial_state(style, limits, rng, profile=profile)
+    for i in range(400):
+        state = step(
+            state, style, is_cut=(i % 6 == 0), limits=limits, rng=rng, profile=profile
+        )
+        # Floored well above the CCT-white threshold: the accent shows colour.
+        assert state.render_saturation >= profile.saturation_floor - 1e-9
+
+
+def test_spill_saturation_does_not_decay_between_cuts() -> None:
+    """Regression: the profile factor must not compound as the walk feeds back.
+
+    A spill run for many consecutive non-cut ticks must stay colourful rather
+    than decaying toward white, which is what happened when the saturation
+    factor was re-applied to the walk's own output every tick.
+    """
+    style = get_style("sport")
+    limits = Limits()
+    profile = profile_for(ROLE_SPILL)
+    rng = random.Random(5)
+    state = initial_state(style, limits, rng, profile=profile)
+    for _ in range(300):  # all non-cut
+        state = step(
+            state, style, is_cut=False, limits=limits, rng=rng, profile=profile
+        )
+    assert state.render_saturation >= profile.saturation_floor - 1e-9
 
 
 # --- delta scaling -----------------------------------------------------------

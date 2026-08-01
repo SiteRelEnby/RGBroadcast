@@ -29,6 +29,7 @@ from .const import (
     AD_STYLE,
     DEFAULT_AD_BREAKS,
     DEFAULT_BRIGHTNESS_CEILING,
+    DEFAULT_COLOUR,
     DEFAULT_INTENSITY,
     DEFAULT_ON_STOP,
     DEFAULT_STYLE,
@@ -86,6 +87,7 @@ class EngineConfig:
 
     style: str = DEFAULT_STYLE
     intensity: float = DEFAULT_INTENSITY
+    colour: float = DEFAULT_COLOUR
     ad_breaks: bool = DEFAULT_AD_BREAKS
     tick_min: float | None = None  # None: pick from renderer capability
     tick_max: float | None = None
@@ -280,6 +282,7 @@ class RGBroadcastEngine:
         self._clear_onoff_issue(entity_id)
         style = get_style(self._current_style())
         role = self._roles.get(entity_id, ROLE_SCREEN)
+        profile = profile_for(role)
         limits = limits_from(
             caps,
             disable_cct=self.config.disable_cct,
@@ -290,8 +293,10 @@ class RGBroadcastEngine:
             role=role,
             caps=caps,
             limits=limits,
-            profile=profile_for(role),
-            walk=initial_state(style, limits, self._rng),
+            profile=profile,
+            walk=initial_state(
+                style, limits, self._rng, profile=profile, colour=self.config.colour
+            ),
             restore_state=self._capture(state),
         )
 
@@ -342,6 +347,7 @@ class RGBroadcastEngine:
                 style,
                 is_cut=is_cut,
                 intensity=self.config.intensity,
+                colour=self.config.colour,
                 limits=light.limits,
                 rng=self._rng,
                 profile=light.profile,

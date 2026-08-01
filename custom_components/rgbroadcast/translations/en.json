@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "RGBroadcast",
-        "description": "Simulate a television for occupancy while you are away. The screen light does the full brightness swing; spill lights are optional ambient bounce that stay dimmer and follow the screen.",
+        "description": "Simulate a television for occupancy while you are away. The screen light does the full brightness swing; spill lights are optional colour accents that stay dimmer and deepen the screen's colour, like bias lighting behind a TV.",
         "data": {
           "name": "Name",
           "screen_light": "Screen light",
@@ -11,7 +11,20 @@
         },
         "data_description": {
           "screen_light": "The main light, driven with the full television effect.",
-          "spill_lights": "Extra lights lit as if by the screen: dimmer, and following the screen's colour with a lag."
+          "spill_lights": "Colour accent lights: dimmer, more saturated, and following the screen's hue to inject colour notes alongside it."
+        }
+      },
+      "reconfigure": {
+        "title": "RGBroadcast lights",
+        "description": "Change the name or the lights this instance drives. Saving reloads it with the new light set.",
+        "data": {
+          "name": "Name",
+          "screen_light": "Screen light",
+          "spill_lights": "Spill lights (optional)"
+        },
+        "data_description": {
+          "screen_light": "The main light, driven with the full television effect.",
+          "spill_lights": "Colour accent lights: dimmer, more saturated, and following the screen's hue to inject colour notes alongside it."
         }
       }
     },
@@ -20,7 +33,8 @@
       "light_onoff_only": "That light can only switch on and off, so there is nothing to vary. Pick a dimmable or colour light."
     },
     "abort": {
-      "already_configured": "Those lights are already set up as a RGBroadcast."
+      "already_configured": "Those lights are already set up as a RGBroadcast.",
+      "reconfigure_successful": "RGBroadcast updated."
     }
   },
   "options": {
@@ -64,7 +78,8 @@
       }
     },
     "number": {
-      "intensity": { "name": "Intensity" }
+      "intensity": { "name": "Intensity" },
+      "colour": { "name": "Colour" }
     },
     "switch": {
       "ad_breaks": { "name": "Ad breaks" }

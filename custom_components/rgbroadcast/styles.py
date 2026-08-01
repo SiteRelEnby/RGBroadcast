@@ -63,23 +63,22 @@ class Style:
 
 
 _STYLE_LIST: Final = (
-    # Slow, dim, warm. Long scenes, occasional dramatic swing.
-    Style("film", 16, (14, 55), 4, 26, (15, 60), (4, 14, 30), (2700, 3400)),
-    # Big swings, frequent cuts, orange explosion flashes.
-    Style("action", 6, (20, 90), 9, 40, (10, 50), (8, 25, 60), (2700, 4200)),
-    # Studio-lit and near-constant, with camera-angle cuts. The most realistic
-    # early-evening default: it is what most evening viewing looks like from
-    # outside a window.
-    Style("news", 15, (55, 75), 2, 10, (190, 230), (3, 8, 14), (5000, 6500)),
-    # Bright, steady, green-ish cast from the pitch.
-    Style("sport", 9, (45, 80), 4, 16, (90, 150), (10, 22, 40), (4500, 6000)),
-    # Saturated and continuously moving, but few real cuts.
-    Style("game", 20, (25, 80), 7, 30, (0, 360), (25, 45, 75), (3000, 5000)),
-    # Dim and sporadic. What is on at 01:00.
-    Style("latenight", 26, (8, 30), 3, 14, (15, 45), (4, 12, 24), (2700, 3200)),
-    # Bright, garish, relentless. Engaged by the ad-break state machine rather
-    # than chosen directly.
-    Style("ads", 3, (50, 95), 12, 45, (0, 360), (30, 55, 85), (3500, 5500)),
+    # Slow, dim, warm amber. Long scenes, occasional dramatic swing.
+    Style("film", 16, (14, 55), 4, 26, (12, 45), (8, 22, 45), (2700, 3400)),
+    # Big warm swings, frequent cuts, orange explosion flashes.
+    Style("action", 6, (20, 90), 9, 40, (8, 45), (14, 35, 70), (2700, 4200)),
+    # Studio-lit, cool and near-constant, with camera-angle cuts. The least
+    # colourful style: a steady cool-white wash with the faintest blue tint.
+    Style("news", 15, (55, 75), 2, 10, (200, 235), (5, 12, 24), (5000, 6500)),
+    # Bright, steady, green cast from the pitch.
+    Style("sport", 9, (45, 80), 4, 16, (95, 150), (14, 30, 55), (4500, 6000)),
+    # Saturated and continuously moving across the whole wheel, but few cuts.
+    Style("game", 20, (25, 80), 7, 30, (0, 360), (35, 60, 92), (3000, 5000)),
+    # Dim and sporadic, warm. What is on at 01:00.
+    Style("latenight", 26, (8, 30), 3, 14, (12, 45), (8, 20, 40), (2700, 3200)),
+    # Bright, garish, relentless, full-wheel. Engaged by the ad-break state
+    # machine rather than chosen directly.
+    Style("ads", 3, (50, 95), 12, 45, (0, 360), (40, 68, 95), (3500, 5500)),
 )
 
 STYLES: Final[MappingProxyType[str, Style]] = MappingProxyType(
