@@ -1,5 +1,9 @@
 # RGBroadcast
 
+<p align="center">
+  <img src="logo.png" alt="RGBroadcast" width="320">
+</p>
+
 Make a light look like a television is on, so an empty house looks occupied.
 
 Occupancy simulation usually replays recorded on/off history, or blinks lights
